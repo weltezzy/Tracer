@@ -34,6 +34,7 @@ async def main():
                 r = await client(GetResaleStarGiftsRequest(gift_id=gift.id, offset="", limit=PER_GIFT))
             except Exception as e:
                 print("skip", gift.id, e)
+            
                 await asyncio.sleep(2)
                 continue
             for u in r.gifts:
@@ -41,14 +42,25 @@ async def main():
                 key = f"{u.slug}:{price}"
                 new_seen.add(key)
                 if key in seen or first:
-                    continue
-                owner = getattr(u, "owner_name", None)
-                if not owner and getattr(u, "owner_id", None):
-                    try:
-                        e = await client.get_entity(u.owner_id)
-                        owner = ("@" + e.username) if getattr(e, "username", None) else f"id {e.id}"
-                    except Exception:
-                        owner = "скрыт"
+                    continue 
+owner = None
+owner_id = getattr(u, "owner_id", None)
+
+# Сначала пытаемся получить публичный username
+if owner_id:
+    try:
+        entity = await client.get_entity(owner_id)
+        username = getattr(entity, "username", None)
+
+        if username:
+            owner = f"@{username}"
+    except Exception as exc:
+        print("Username lookup failed:", repr(exc))
+
+# Если username недоступен, показываем имя из данных подарка
+if not owner:
+    owner = getattr(u, "owner_name", None) or "не удалось определить"
+
                 send(f"🎁 {u.title} #{u.num}\n💰 {price} ⭐\n👤 {owner or 'скрыт'}\n🔗 https://t.me/nft/{u.slug}")
                 await asyncio.sleep(0.5)
             await asyncio.sleep(1)
