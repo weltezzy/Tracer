@@ -60,7 +60,6 @@ if owner_id:
 # Если username недоступен, показываем имя из данных подарка
 if not owner:
     owner = getattr(u, "owner_name", None) or "не удалось определить"
-
                 send(f"🎁 {u.title} #{u.num}\n💰 {price} ⭐\n👤 {owner or 'скрыт'}\n🔗 https://t.me/nft/{u.slug}")
                 await asyncio.sleep(0.5)
             await asyncio.sleep(1)
