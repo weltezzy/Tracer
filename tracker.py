@@ -23,8 +23,8 @@ def price_of(g):
     return getattr(g, "resell_stars", "?")
 
 async def main():
-    first = False
-    seen = set()
+    first = not os.path.exists(STATE)
+    seen = set(json.load(open(STATE))) if not first else set()
     new_seen = set(seen)
     async with TelegramClient(StringSession(SESSION), API_ID, API_HASH) as client:
         res = await client(GetStarGiftsRequest(hash=0))
