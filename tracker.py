@@ -10,7 +10,7 @@ SESSION = os.environ["SESSION"]
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 STATE = "seen.json"
-PER_GIFT = 20
+PER_GIFT = 5
 
 def send(text):
     data = urllib.parse.urlencode({"chat_id": CHAT_ID, "text": text}).encode()
