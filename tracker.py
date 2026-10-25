@@ -1,7 +1,7 @@
 import os, json, asyncio, html, urllib.request, urllib.parse
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.tl.functions.payments import GetStarGiftsRequest, GetResaleStarGiftsRequest
+from telethon.tl.functions.payments import GetStarGiftsRequest, GetResaleStarGiftsRequest, GetUniqueStarGiftRequest
 
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
@@ -9,12 +9,12 @@ SESSION = os.environ["SESSION"]
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 STATE = "seen.json"
-PER_GIFT = 5
-MAX_SEND = 4
+PER_GIFT = 20
+MAX_SEND = 15
 dbg = 0
 
 def send(text):
-    data = urllib.parse.urlencode({"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}).encode()
+    data = urllib.parse.urlencode({"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": "true"}).encode()
     try:
         urllib.request.urlopen(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data, timeout=20)
     except Exception as e:
@@ -26,17 +26,25 @@ def price_of(g):
         return getattr(ra[0], "amount", ra[0])
     return getattr(g, "resell_stars", "?")
 
-async def owner_of(client, u, users):
+async def owner_of(client, u):
     global dbg
-    oid = getattr(u, "owner_id", None)
-    oname = getattr(u, "owner_name", None)
-    oaddr = getattr(u, "owner_address", None)
-    if dbg < 3:
+    full_users = {}
+    uu = u
+    try:
+        full = await client(GetUniqueStarGiftRequest(slug=u.slug))
+        uu = getattr(full, "gift", u)
+        full_users = {x.id: x for x in getattr(full, "users", [])}
+    except Exception as e:
+        print("unique error", e)
+    oid = getattr(uu, "owner_id", None) or getattr(u, "owner_id", None)
+    oname = getattr(uu, "owner_name", None) or getattr(u, "owner_name", None)
+    oaddr = getattr(uu, "owner_address", None) or getattr(u, "owner_address", None)
+    if dbg < 4:
         dbg += 1
-        print("DEBUG owner_id=", oid, "owner_name=", oname, "owner_address=", oaddr)
+        print("DEBUG", type(oid).__name__, oid, "|", oname, "|", oaddr)
     uid = getattr(oid, "user_id", None)
     if uid:
-        user = users.get(uid)
+        user = full_users.get(uid)
         if not user:
             try:
                 user = await client.get_entity(uid)
@@ -51,11 +59,17 @@ async def owner_of(client, u, users):
         s = f'<a href="tg://user?id={uid}">{name}</a>'
         if uname:
             s += f" @{html.escape(uname)}"
-        return s + f" (id {uid})"
+        return s + f"\nID: <code>{uid}</code>"
     if oaddr:
-        return f"кошелёк {html.escape(str(oaddr))}"
+        return f"{html.escape(oname or '')} кошелёк: <code>{html.escape(str(oaddr))}</code>"
     if oname:
-        return f"{html.escape(oname)} (ID скрыт)"
+        if str(oname).startswith("@"):
+            try:
+                e = await client.get_entity(oname)
+                return f"{html.escape(oname)}\nID: <code>{e.id}</code>"
+            except Exception:
+                pass
+        return f"{html.escape(str(oname))} (ID скрыт)"
     return "скрыт"
 
 async def main():
@@ -73,7 +87,6 @@ async def main():
                 print("skip", gift.id, e)
                 await asyncio.sleep(2)
                 continue
-            users = {x.id: x for x in getattr(r, "users", [])}
             for u in r.gifts:
                 try:
                     price = price_of(u)
@@ -83,7 +96,7 @@ async def main():
                         continue
                     if sent >= MAX_SEND:
                         continue
-                    owner = await owner_of(client, u, users)
+                    owner = await owner_of(client, u)
                     send(f"🎁 {html.escape(str(u.title))} #{u.num}\n💰 {price} ⭐\n👤 {owner}\n🔗 https://t.me/nft/{u.slug}")
                     sent += 1
                     await asyncio.sleep(1)
