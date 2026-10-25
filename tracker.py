@@ -14,7 +14,7 @@ RUN_SECONDS = 270
 MAX_SEND = 40
 
 def send(text, slug):
-    text += f"\n🔗 https://t.me/nft/{slug}"
+    text += f"\n🔗 <code>https://t.me/nft/{slug}</code>"
     kb = {"inline_keyboard": [
         [{"text": "🎁 Лот", "url": "https://t.me/nft/" + slug}],
         [
