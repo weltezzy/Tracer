@@ -14,10 +14,15 @@ RUN_SECONDS = 270
 MAX_SEND = 40
 
 def send(text, slug):
-    kb = {"inline_keyboard": [[
-        {"text": "🎁 Лот", "url": "https://t.me/nft/" + slug},
-        {"text": "🔎 Get Gifts", "url": "https://t.me/share/url?url=https://t.me/nft/" + slug},
-    ]]}
+    text += f"\n🔗 https://t.me/nft/{slug}"
+    kb = {"inline_keyboard": [
+        [{"text": "🎁 Лот", "url": "https://t.me/nft/" + slug}],
+        [
+            {"text": "🔎 Get Gifts", "url": "https://t.me/getSendGiftsProBot?start=" + slug},
+            {"text": "📊 see.tg", "url": "https://t.me/seetgbot?start=" + slug},
+        ],
+        [{"text": "📤 Отправить ссылку в чат", "url": "https://t.me/share/url?url=https://t.me/nft/" + slug}],
+    ]}
     p = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML",
          "disable_web_page_preview": "true", "reply_markup": json.dumps(kb)}
     try:
@@ -31,6 +36,20 @@ def price_of(g):
     if ra:
         return getattr(ra[0], "amount", ra[0])
     return getattr(g, "resell_stars", "?")
+
+def num(g):
+    try:
+        return int(price_of(g))
+    except Exception:
+        return 10**12
+
+def okey(u):
+    oid = getattr(u, "owner_id", None)
+    uid = getattr(oid, "user_id", None)
+    if uid:
+        return "id" + str(uid)
+    name = getattr(u, "owner_name", None)
+    return "n" + str(name) if name else "s" + u.slug
 
 async def owner_of(client, u):
     uu, users = u, {}
@@ -66,11 +85,12 @@ async def main():
     first = not os.path.exists(STATE)
     seen = {k.split(":")[0] for k in json.load(open(STATE))} if not first else set()
     end = time.time() + RUN_SECONDS
+    sent = 0
     async with TelegramClient(StringSession(SESSION), API_ID, API_HASH) as client:
         res = await client(GetStarGiftsRequest(hash=0))
         gifts = [g for g in getattr(res, "gifts", []) if getattr(g, "availability_resale", 0)]
-        sent = 0
         while True:
+            pending = {}
             for gift in gifts:
                 if time.time() > end:
                     break
@@ -81,20 +101,30 @@ async def main():
                     await asyncio.sleep(2)
                     continue
                 for u in r.gifts:
-                    try:
-                        if u.slug in seen:
-                            continue
-                        seen.add(u.slug)
-                        if first or sent >= MAX_SEND:
-                            continue
-                        owner, has_user = await owner_of(client, u)
-                        mark = "✅ " if has_user else ""
-                        send(f"{mark}🎁 {html.escape(str(u.title))} #{u.num}\n💰 {price_of(u)} ⭐\n👤 {owner}", u.slug)
-                        sent += 1
-                        await asyncio.sleep(0.5)
-                    except Exception as e:
-                        print("item error", e)
+                    if u.slug in seen:
+                        continue
+                    seen.add(u.slug)
+                    if first:
+                        continue
+                    pending.setdefault(okey(u), []).append(u)
                 await asyncio.sleep(0.5)
+            for lots in pending.values():
+                if sent >= MAX_SEND:
+                    break
+                try:
+                    lots.sort(key=num)
+                    main_lot = lots[0]
+                    owner, has_user = await owner_of(client, main_lot)
+                    mark = "✅ " if has_user else ""
+                    text = f"{mark}🎁 {html.escape(str(main_lot.title))} #{main_lot.num}\n💰 {price_of(main_lot)} ⭐\n👤 {owner}"
+                    if len(lots) > 1:
+                        extra = [f"{html.escape(str(x.title))} #{x.num} ({price_of(x)}⭐) t.me/nft/{x.slug}" for x in lots[1:6]]
+                        text += f"\n\n➕ Ещё лотов этого продавца: {len(lots) - 1}\n" + "\n".join(extra)
+                    send(text, main_lot.slug)
+                    sent += 1
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    print("item error", e)
             json.dump(sorted(seen), open(STATE, "w"))
             first = False
             if time.time() > end:
