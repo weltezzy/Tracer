@@ -74,7 +74,7 @@ async def owner_of(client, u):
 
 async def main():
     first = not os.path.exists(STATE)
-    seen = set(json.load(open(STATE))) if not first else set()
+    seen = {k.split(":")[0] for k in json.load(open(STATE))} if not first else set()
     new_seen = set(seen)
     sent = 0
     async with TelegramClient(StringSession(SESSION), API_ID, API_HASH) as client:
@@ -90,7 +90,7 @@ async def main():
             for u in r.gifts:
                 try:
                     price = price_of(u)
-                    key = f"{u.slug}:{price}"
+                    key = u.slug
                     new_seen.add(key)
                     if key in seen or first:
                         continue
