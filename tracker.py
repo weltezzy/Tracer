@@ -12,15 +12,12 @@ STATE = "seen.json"
 PER_GIFT = 20
 RUN_SECONDS = 270
 MAX_SEND = 40
+MAX_LOOKUPS = 8
 
 def send(text, slug):
-    text += f"\n🔗 https://t.me/nft/{slug}"
+    text += f"\n🔗 <code>https://t.me/nft/{slug}</code>"
     kb = {"inline_keyboard": [
         [{"text": "🎁 Лот", "url": "https://t.me/nft/" + slug}],
-        [
-            {"text": "🔎 Get Gifts", "url": "https://t.me/getSendGiftsProBot?start=" + slug},
-            {"text": "📊 see.tg", "url": "https://t.me/seetgbot?start=" + slug},
-        ],
         [{"text": "📤 Отправить ссылку в чат", "url": "https://t.me/share/url?url=https://t.me/nft/" + slug}],
     ]}
     p = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML",
@@ -81,11 +78,46 @@ async def owner_of(client, u):
         return html.escape(str(name)) + " (ID скрыт)", False
     return "скрыт", False
 
+async def bot_owner(client, bot, slug, label):
+    try:
+        async with client.conversation(bot, timeout=25) as conv:
+            await conv.send_message("https://t.me/nft/" + slug)
+            texts, links = [], []
+            for _ in range(2):
+                try:
+                    r = await conv.get_response()
+                except Exception:
+                    break
+                print("BOT", bot, repr(r.raw_text[:300]))
+                texts.append(r.raw_text)
+                for ent, txt in (r.get_entities_text() or []):
+                    url = getattr(ent, "url", None)
+                    uid = getattr(ent, "user_id", None)
+                    if uid:
+                        links.append(f"tg://user?id={uid}")
+                    elif url and "t.me/" in url and "/nft/" not in url:
+                        links.append(url)
+                if "ладел" in r.raw_text:
+                    break
+        line = ""
+        for t in texts:
+            line = next((l for l in t.splitlines() if "ладел" in l), "")
+            if line:
+                break
+        out = html.escape(line.strip())
+        if links:
+            out += "\n" + "\n".join(dict.fromkeys(links[:3]))
+        return f"🔎 {label}: {out}" if (line or links) else ""
+    except Exception as e:
+        print("bot error", bot, e)
+        return ""
+
 async def main():
     first = not os.path.exists(STATE)
     seen = {k.split(":")[0] for k in json.load(open(STATE))} if not first else set()
     end = time.time() + RUN_SECONDS
     sent = 0
+    lookups = 0
     async with TelegramClient(StringSession(SESSION), API_ID, API_HASH) as client:
         res = await client(GetStarGiftsRequest(hash=0))
         gifts = [g for g in getattr(res, "gifts", []) if getattr(g, "availability_resale", 0)]
@@ -115,6 +147,13 @@ async def main():
                     lots.sort(key=num)
                     main_lot = lots[0]
                     owner, has_user = await owner_of(client, main_lot)
+                    if not has_user and lookups < MAX_LOOKUPS:
+                        lookups += 1
+                        for bot, label in (("getSendGiftsProBot", "Get Gifts"), ("seetgbot", "see.tg")):
+                            so = await bot_owner(client, bot, main_lot.slug, label)
+                            await asyncio.sleep(3)
+                            if so:
+                                owner += "\n" + so
                     mark = "✅ " if has_user else ""
                     text = f"{mark}🎁 {html.escape(str(main_lot.title))} #{main_lot.num}\n💰 {price_of(main_lot)} ⭐\n👤 {owner}"
                     if len(lots) > 1:
